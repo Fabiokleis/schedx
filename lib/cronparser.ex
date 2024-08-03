@@ -11,39 +11,76 @@ defmodule Cronparser do
   # │ │ │ │ │
   # * * * * * <command to execute>
 
-  def parse([], acc), do: acc
+  def match_range(key, value) do
+    case key do
+      :minute when value >= 0 and value <= 59 -> value
+      :hour when value >= 0 and value <= 23 -> value
+      :day when value >= 1 and value <= 31 -> value
+      :month when value >= 1 and value <= 12 -> value
+      :weekday when value >= 0 and value <= 6 -> value
+      _ -> :badcronrange
+    end
+  end
 
-  def parse([{k, "*"} | rest], acc), do: parse(rest, [{k, "*"} | acc])
+  # TODO:
+  # - add periodic parsing for minutes;
+  def parse_token(key, token) do
+    cond do
+      String.match?(token, ~r/^\d{1,2}$/) ->
+        {key, match_range(key, String.to_integer(token))}
 
-  def parse([{k, i} | rest], acc) do
-    case Integer.parse(i, 10) do
-      {v, ""} ->
-        case k do
-          :minute when v >= 0 and v <= 59 -> parse(rest, [{k, v} | acc])
-          :hour when v >= 0 and v <= 23 -> parse(rest, [{k, v} | acc])
-          :day when v >= 1 and v <= 31 -> parse(rest, [{k, v} | acc])
-          :month when v >= 1 and v <= 12 -> parse(rest, [{k, v} | acc])
-          :weekday when v >= 0 and v <= 6 -> parse(rest, [{k, v} | acc])
-          _ -> :invalid
+      String.match?(token, ~r/^(\d{1,2}(,\d{1,2}){0,30})$/) ->
+        selection =
+          token
+          |> String.split(",")
+          |> Enum.uniq()
+          |> Enum.map(&String.to_integer/1)
+
+        {key, selection}
+
+      key != :minute and String.match?(token, ~r/^\d{1,2}-\d{1,2}$/) ->
+        case String.split(token, "-") |> Enum.map(&String.to_integer/1) do
+          [a, a] -> {key, match_range(key, a)}
+          [a, b] when a < b -> {key, [a, b]}
+          _ -> {key, :badcronrange}
         end
 
-      _ ->
-        :invalid
+      true ->
+        {key, :invalid}
+    end
+  end
+
+  def parse([], acc), do: Enum.reverse(acc)
+
+  def parse([{k, "*"} | rest], acc), do: parse(rest, [{k, :*} | acc])
+
+  def parse([{key, token} | rest], acc) do
+    case parse_token(key, token) do
+      {:*, :*} ->
+        parse(rest, [{key, :*} | acc])
+
+      {^key, value} when is_number(value) ->
+        parse(rest, [{key, value} | acc])
+
+      {^key, value} when is_list(value) ->
+        case Enum.any?(value, fn v -> match_range(key, v) == :badcronrange end) do
+          false -> parse(rest, [{key, value} | acc])
+          true -> {key, :badcronrange}
+        end
+
+      {^key, reason} ->
+        {key, reason}
     end
   end
 
   def parse(jobstr) do
-    [minute, hour, day, month, weekday] = String.split(jobstr, " ")
+    a =
+      [:minute, :hour, :day, :month, :weekday]
+      |> Enum.zip(String.split(jobstr, " "))
+      |> parse([])
 
-    parse(
-      [
-        minute: minute,
-        hour: hour,
-        day: day,
-        month: month,
-        weekday: weekday
-      ],
-      []
-    )
+    IO.puts("#{inspect(a)}")
+
+    a
   end
 end
