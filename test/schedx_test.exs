@@ -33,10 +33,10 @@ defmodule SchedxTest do
 
     assert Cronparser.parse("2 9-12 * * 1-5") == [
              minute: 2,
-             hour: [9, 12],
+             hour: [9, 10, 11, 12],
              day: :*,
              month: :*,
-             weekday: [1, 5]
+             weekday: [1, 2, 3, 4, 5]
            ]
 
     # invalid periodic range
